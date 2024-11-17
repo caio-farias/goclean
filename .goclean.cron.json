@@ -1,0 +1,12 @@
+[
+  {
+    "name": "job1",
+    "cronn_exp": "5 45 * * * *",
+    "command": "echo 'HelloWrold'"
+  },
+    {
+    "name": "job2",
+    "cronn_exp": "5 45 * * * *",
+    "command": "./script > log.txt"
+  }
+]

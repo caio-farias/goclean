@@ -2,7 +2,10 @@ module goclean
 
 go 1.23.2
 
-require github.com/spf13/cobra v1.8.1
+require (
+	github.com/robfig/cron v1.2.0
+	github.com/spf13/cobra v1.8.1
+)
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

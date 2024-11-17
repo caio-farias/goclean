@@ -10,7 +10,7 @@
       "request": "launch",
       "mode": "auto",
       "program": "${fileDirname}",
-      "args": ["-p", "aaa"]
+      "args": ["-p", "./aaa", "-f", "a*", "-cront_exp", "1 * * * * *"]
     }
   ]
 }

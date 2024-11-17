@@ -1,54 +1,90 @@
 package main
 
 import (
-	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
 )
 
-func removeFiles(directories []fs.DirEntry, final_date time.Time) {
-	for _, dir := range directories {
-		info, _ := dir.Info()
-		if info.ModTime().After(final_date) {
-			continue
-		}
-		if info.IsDir() {
-			nextDirectories, err := os.ReadDir(info.Name())
-			if err != nil {
-				fmt.Println("Error removing file:", err)
-			}
-			removeFiles(nextDirectories, final_date)
-		}
+// Q ---  Q --- S
+// A1 15:00 --- A2 14 --- 15:00
 
-		if !info.IsDir() {
-			fullPath, err := filepath.Abs(info.Name())
-			if err != nil {
-				fmt.Println("Error getting full path:", err)
-				return
-			}
+func wildcardMatch(text, pattern string) bool {
+	textLen := len(text)
+	patternLen := len(pattern)
+	textIdx, patternIdx := 0, 0
+	starIdx, matchIdx := -1, 0
 
-			// Remove the file
-			err = os.Remove(fullPath)
-			if err != nil {
-				fmt.Println("Error removing file:", err)
-			}
+	for textIdx < textLen {
+		// If characters match or pattern has '*', continue
+		if patternIdx < patternLen && (pattern[patternIdx] == text[textIdx]) {
+			textIdx++
+			patternIdx++
+		} else if patternIdx < patternLen && pattern[patternIdx] == '*' {
+			// '*' found, record the position
+			starIdx = patternIdx
+			matchIdx = textIdx
+			patternIdx++
+		} else if starIdx != -1 {
+			// Backtrack to the last '*' position
+			patternIdx = starIdx + 1
+			matchIdx++
+			textIdx = matchIdx
+		} else {
+			// No match found
+			return false
 		}
-
 	}
+
+	// Check if remaining pattern characters are all '*'
+	for patternIdx < patternLen && pattern[patternIdx] == '*' {
+		patternIdx++
+	}
+
+	// If we reached the end of the pattern, it's a match
+	return patternIdx == patternLen
 }
 
-func FindDir(path string, final_date time.Time) {
-	directories, err := os.ReadDir(path)
-	file, errFile := os.ReadFile(path)
-	if err != nil && errFile != nil {
-		log.Fatal("Error reading directory:", err)
-		return
+func FindTargets(path string, final_date time.Time, filename string) ([]string, error) {
+	targets := []string{}
+
+	err := filepath.Walk(path, func(file_path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if anyMatch(
+			true,
+			path == file_path,                 // exclude root
+			!final_date.After(info.ModTime()), // exclude filter files with early age
+			// exclude non filename match
+			filename != "" && !wildcardMatch(info.Name(), filename)) {
+			return nil
+		}
+
+		targets = append(targets, file_path)
+		return nil
+	})
+
+	return targets, err
+}
+
+func anyMatch(match bool, inputs ...bool) bool {
+	for _, input := range inputs {
+		if input == match {
+			return match
+		}
 	}
-	if errFile == nil {
-		print(file)
+
+	return !match
+}
+
+func DeleteTargets(targets []string) {
+	for _, t := range targets {
+		err := os.Remove(t)
+		if err != nil {
+			log.Fatalln("error trying to delete target", t)
+		}
 	}
-	removeFiles(directories, final_date)
 }
