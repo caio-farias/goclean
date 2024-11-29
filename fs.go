@@ -80,11 +80,30 @@ func anyMatch(match bool, inputs ...bool) bool {
 	return !match
 }
 
-func DeleteTargets(targets []string) {
+func DeleteTargets(targets []string) int {
+	deletionClearedSpace := 0
 	for _, t := range targets {
+		bytes, errRead := os.ReadFile(t)
 		err := os.Remove(t)
-		if err != nil {
+		if err != nil || errRead != nil {
 			log.Fatalln("error trying to delete target", t)
 		}
+		deletionClearedSpace += len(bytes)
 	}
+	return deletionClearedSpace
+}
+
+func Clean(path string, age int, filename string) {
+	now := time.Now()
+	final_date := now.AddDate(0, 0, -age)
+
+	targets, _ := FindTargets(path, final_date, filename)
+
+	if len(targets) > 0 {
+		space_restored_in_bytes := DeleteTargets(targets)
+		log.Println(space_restored_in_bytes)
+		logDeletions(targets, space_restored_in_bytes)
+	}
+
+	log.Printf("No targets like [path: %s] [filename %s] [age: %d] to clean.", path, filename, age)
 }

@@ -5,14 +5,16 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 )
 
 const (
-	LOG_FILENAME      = ".goclean.log"
-	SCHEDULE_FILENAME = ".goclean.cron.json"
+	LOG_FILENAME        = ".goclean.log"
+	SCHEDULE_FILENAME   = ".goclean.cron.json"
+	DEFAULT_DATE_FORMAT = "Jan 02 2006 - 15:04:05"
 )
 
 type LogFile struct {
@@ -27,11 +29,11 @@ var (
 )
 
 var (
-	path     string
-	age      string
-	filename string
-	pattern  string
-	cron_exp string
+	path          string
+	age           string
+	filename      string
+	cron_exp      string
+	schedule_mode bool
 )
 
 func main() {
@@ -42,33 +44,30 @@ func main() {
 		Long:  "TODO",                                   // Long description
 		Run: func(cmd *cobra.Command, args []string) {
 
+			if schedule_mode {
+				schdl := NewScheduler(SCHEDULE_FILENAME)
+				var wg sync.WaitGroup
+				wg.Add(1)
+				defer wg.Wait()
+				go schdl.Init(&wg)
+				return
+			}
+
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				fmt.Println("File/dir does not exist")
 				return
 			}
 
-			age, err := strconv.Atoi(age)
+			ageVerified, err := strconv.Atoi(age)
 			if err != nil {
 				log.Fatalln("age is NAN")
 			}
 
-			if cron_exp == "" {
-				execClean(path, age, filename)
-			}
-
-			schdl := NewScheduler(SCHEDULE_FILENAME)
-			schdl.add(cron_exp, func() {
-				execClean(path, age, filename)
-			})
-			schdl.cron.Start()
-			time.Sleep(2 * time.Minute)
-
-			// Stop the scheduler gracefully
-			schdl.cron.Stop()
-			fmt.Println("Scheduler stopped")
+			Clean(path, ageVerified, filename)
 		},
 	}
 
+	rootCmd.Flags().BoolVarP(&schedule_mode, "schedule_mode", "s", false, "path to directory")
 	rootCmd.Flags().StringVarP(&path, "path", "p", "./aaa", "path to directory")
 	rootCmd.Flags().StringVarP(&age, "age", "a", "0", "Target age")
 	rootCmd.Flags().StringVarP(&filename, "filename", "f", "", "filename")
@@ -81,44 +80,31 @@ func main() {
 	}
 }
 
-func execClean(path string, age int, filename string) {
-	now := time.Now()
-	final_date := now.AddDate(0, 0, -age)
-
-	targets, _ := FindTargets(path, final_date, filename)
-	defer LOG_FILE.File.Close()
-	logDeletions(targets)
-	if len(targets) > 0 {
-		DeleteTargets(targets)
-	}
-	return
-}
-
-func logDeletions(targets []string) {
+func logDeletions(targets []string, space_restored_in_bytes int) {
 	var log_content string
 
-	now := time.Now()
-	now_as_str := now.Format("Jan 02 2006 - 15:04:05")
-
+	kb_restored := space_restored_in_bytes / 1024
 	if len(targets) > 0 {
-		log_content = fmt.Sprintf("[%s] Content removed: \n", now_as_str)
+		log_content = fmt.Sprintf("Content removed (%d KB): \n", kb_restored)
 		for _, t := range targets {
 			log_content += fmt.Sprintf(" - %s \n", t)
 		}
 	} else {
-		log_content = fmt.Sprintf("[%s] No content was removed. \n", now_as_str)
+		log_content = "No content was removed. \n"
 	}
 
 	WriteLog(log_content)
 }
 
 func WriteLog(log_content string) {
+	nowFormatted := time.Now().Format(DEFAULT_DATE_FORMAT)
 	var fileContent []byte
 	_, err := LOG_FILE.File.Read(fileContent)
 	if err != nil {
 		log.Fatalln("Could not open file", err)
 	}
-	LOG_FILE.File.Write([]byte(append(fileContent, []byte(log_content)...)))
+	line := fmt.Sprintf("[%s] %s\n", nowFormatted, log_content)
+	LOG_FILE.File.Write([]byte(append(fileContent, []byte(line)...)))
 }
 
 func init() {
